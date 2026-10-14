@@ -7,9 +7,9 @@ Modelo de classificação binária que estima a probabilidade de churn de client
 
 ## Descrição do problema de negócio
 O programa de loyalty (TMW) recompensa os clientes com pontos por interações (chat, presença, streak, etc.). Quando um cliente engajado para de interagir, a base perde receita e engajamento. O objetivo deste projeto é **antecipar esse abandono**: dado o comportamento histórico de cada cliente até uma data de referência, estimar a probabilidade de ele churnar nos **28 dias seguintes**, para que o time de negócio consiga priorizar ações de retenção.
-Tipo de problema: classificação binária
-Target: `flAtivacao = 1` _significa que o cliente fez uma transação na janlea de 28 dias de referência_
-Data de referência da predição final: `2026-07-01` (coluna `dtRef` do arquivo final)
+- **Tipo de problema**: classificação binária
+- **Target**: `flAtivacao = 1` _significa que o cliente fez uma transação na janlea de 28 dias de referência_ (`flAtivacao = 0` é churn)
+- **Data de referência da predição final**: `2026-07-01` (coluna `dtRef` do arquivo final)
 
 <br> 
 
@@ -26,6 +26,8 @@ Data de referência da predição final: `2026-07-01` (coluna `dtRef` do arquivo
 9. [Repositório e citação](#-repositório-e-citação)
 10. [Próximos passos](#-próximos-passos)
 11. [Autores / contato](#-autores--contato)
+
+> **Projeto desenvolvido no Databricks.** O repositório guarda código (notebooks e SQL) e os dois CSVs finais em `Modelo/output/`. Tabelas, modelo treinado e demais artefatos ficam no **catálogo** do Databricks (ver [Artefatos no catálogo](#-artefatos-no-catálogo-databricks)).
 
 ## Estrutura do repositório
 
@@ -66,7 +68,7 @@ ASN2026_tmw-loyalty-t05/
 |---|---|
 | Fonte | [Loyalty System](https://www.kaggle.com/datasets/teocalvo/teomewhy-loyalty-system) e [Education Platform](https://www.kaggle.com/datasets/teocalvo/teomewhy-education-platform) |
 | Período | 2025-01-01 até 2026-07-01 |
-| Nº de linhas (treino) | 2154 |
+| Nº de linhas (treino) | 2154 (treino + teste, antes da divisão 80/20) e 239 (OOT) |
 | Nº de colunas (features) | 69 features no modelo |
 | Granularidade | 1 linha por cliente (`IdCliente`) por data de referência (`dtRef`) |
 
@@ -102,13 +104,13 @@ EDA → Feature engineering → Treino → Validação → Tuning → Avaliaçã
 
 | Etapa | O que foi feito |
 |---|---|
-| EDA | [PREENCHER] |
-| Feature engineering | Features de frequência, recência, pontos, mix de transações, sazonalidade (dia da semana / semana do mês) e cursos. [PREENCHER: detalhes, janelas de tempo] |
-| Treino | [PREENCHER: modelos testados e modelo final] |
-| Validação | [PREENCHER: ex.: out-of-time, validação cruzada] |
-| Tuning | [PREENCHER] |
-| Avaliação | [PREENCHER: métricas] |
-| Desbalanceamento | [PREENCHER: ex.: `scale_pos_weight`, SMOTE, nada] |
+| EDA | Feito durante as aulas. Entendimento do banco de dados e o calculo do DAU, MAU, WAU e ARPU. |
+| Feature engineering | Features de frequência, recência, pontos, mix de transações, sazonalidade (dia da semana / semana relativa da janela) e cursos. Janela de 28 dias anteriores à `dtRef`, com `dtRef` mensal (SQL em `Modelo/sql/`). |
+| Treino | 7 modelos comparados e registrados no MLflow: Random Forest (2 configurações), Regressão Logística (2 configurações), CatBoost, AdaBoost e Gradient Boosting. Modelo final: Random Forest 1. Pipeline com imputação: valor 0 nas variáveis percentuais de pontos e de cursos, e valor máximo em `diasDesdeUltimoStreak`, `avgTempoInicioUltimo` e `avgTempoInicioFim` |
+| Validação | Divisão treino/teste 80/20 estratificada (`random_state=42`) sobre as `dtRef` anteriores à última, e base out-of-time (OOT) com a última `dtRef` da ABT (2026-06-01) |
+| Tuning | Variação manual de hiperparâmetros entre as configurações, comparadas no MLflow (ex.: Random Forest com `min_samples_leaf` 30 e 50) |
+| Avaliação | AUC em treino, teste e OOT (ver tabela em Resultados) |
+| Desbalanceamento | Sem reamostragem no modelo final; apenas o CatBoost usou `auto_class_weights='Balanced'` |
 
 ## Variáveis mais importantes
 
@@ -138,14 +140,61 @@ Leitura geral: o modelo se apoia principalmente em **frequência, recência e vo
 
 ![DB_models.png](./Modelo/output/img/DB_models.png)
 
-**Matriz de confusão (modelo final, threshold [PREENCHER]):**
 
-| | Previsto: não churn | Previsto: churn |
+> **Modelo final:** Random Forest 1 (`RandomForestClassifier(min_samples_leaf=30, n_estimators=500, random_state=42)`), com AUC de 0,859 no OOT, 0,798 no teste e 0,840 no treino.
+
+
+**Matriz de confusão (modelo final, base OOT de 2026-06-01, churn = positivo, corte P(churn) > 0,7185):**
+
+O corte é a taxa de resposta do treino aplicada a P(ativo): prevê-se churn quando P(ativo) < 0,2815. A base de **teste** (431 clientes, mesma amostragem do treino) é a principal, e a base **OOT** (2026-06-01, 239 clientes) é complementar.
+ 
+| Teste | Previsto: não churn | Previsto: churn |
 |---|---|---|
-| Real: não churn | [PREENCHER] | [PREENCHER] |
-| Real: churn | [PREENCHER] | [PREENCHER] |
+| Real: não churn | 88 | 33 |
+| Real: churn | 93 | 217 |
+ 
+Acurácia 0,708 · Precision (churn) 0,868 · Recall (churn) 0,700 · F1 0,775
+ 
+| OOT | Previsto: não churn | Previsto: churn |
+|---|---|---|
+| Real: não churn | 113 | 21 |
+| Real: churn | 34 | 71 |
+ 
+Acurácia 0,770 · Precision (churn) 0,772 · Recall (churn) 0,676 · F1 0,721
+ 
+> **Nota sobre amostragem e corte:** o treino e o teste usam uma única `dtRef` sorteada por cliente (2154 linhas, 28,1% ativos). Já as safras completas têm cerca de 52% de ativos (entre 42% e 62% por mês de 2025-01 a 2026-05, e 56,1% em 2026-06, a base OOT). O corte (P(ativo) < 0,2815, a taxa de ativos do treino) vem da base amostrada, por isso a proporção de churn do OOT é menor que a do treino. A AUC não depende dessa proporção, mas as probabilidades absolutas ficam deslocadas em relação à base completa: elas ordenam bem o risco, mas não são probabilidades calibradas.
 
-**Curvas:** [PREENCHER: descrever a curva ROC (AUC e comportamento) e a curva Precision-Recall (precisão em diferentes níveis de recall)].
+**Curvas (base de teste):**
+ 
+- **Curva ROC:** AUC de 0,798, bem acima da diagonal do modelo aleatório (0,5). No corte escolhido (P(churn) > 0,7185), o modelo captura 70,0% dos churns (recall) com 27,3% de falsos positivos (FPR).
+- **Curva Precision-Recall:** PR-AUC de 0,896, contra uma linha de base de 0,719 (a taxa de churn do teste). A precision cai pouco à medida que o recall aumenta:
+| Recall mínimo | Precision |
+|---|---|
+| 0,5 | 0,894 |
+| 0,6 | 0,892 |
+| 0,7 (ponto do corte) | 0,868 |
+| 0,8 | 0,850 |
+| 0,9 | 0,828 |
+ 
+Mesmo capturando 90% dos churns, a precision fica em 0,828, acima da linha de base de 0,719.
+ 
+![Curvas ROC e Precision-Recall: Teste](./Modelo/output/img/roc_pr_teste.png)
+
+**Curvas (base OOT, 2026-06-01):**
+ 
+- **Curva ROC:** AUC de 0,859. No corte escolhido, o recall é 0,676 com 15,7% de falsos positivos (FPR).
+- **Curva Precision-Recall:** PR-AUC de 0,763, contra uma linha de base de 0,439 (a taxa de churn do OOT). No corte escolhido, a precision é 0,772 com recall de 0,676.
+| Recall mínimo | Precision |
+|---|---|
+| 0,5 | 0,786 |
+| 0,6 | 0,772 |
+| 0,7 | 0,758 |
+| 0,8 | 0,733 |
+| 0,9 | 0,700 |
+ 
+![Curvas ROC e Precision-Recall: OOT](./Modelo/output/img/roc_pr_oot.png)
+ 
+A AUC-ROC é maior no OOT (0,859 contra 0,798 no teste), e ela não depende da proporção de churn. O PR-AUC absoluto é menor no OOT (0,763 contra 0,896) porque a linha de base também é menor (0,439 contra 0,719). Em relação à linha de base, o PR-AUC é cerca de 1,7 vez maior no OOT e 1,2 vez no teste (0,763/0,439 e 0,896/0,719).
 
 ## Como reproduzir
 
@@ -170,32 +219,37 @@ O arquivo final é [**top_50_predictions.csv**](./Modelo/output/top_50_predictio
 |---|---|
 | Data de referência (`dtRef`) | 2026-07-01 |
 | Nº de clientes | 50 (todos com `IdCliente` único) |
-| Coluna de probabilidade | `Proba` |
-| Faixa de `Proba` | 0,1688 a 0,3137 (mediana 0,2314) |
-| Colunas | `dtRef`, `IdCliente`, 69 features do modelo e `Proba` (72 colunas no total) |
+| Coluna de probabilidade | `ProbaChurn` = P(`flAtivacao = 0`), probabilidade de churn |
+| Faixa de risco | 78,3% a 92,0% |
+| Colunas | `dtRef`, `IdCliente`, 69 features do modelo e `ProbaChurn` (72 colunas no total) |
 
 **Como é gerado**:
-1. As features de todos os clientes são calculadas para a `dtRef`.
-2. O modelo final gera `Proba = P(flAtivacao = 1)` para cada cliente (_predict_proba_, classe 1).
-3. A probabilidade de churn é `1 − Proba`. Os clientes são ordenados por Proba do menor para o maior (equivale a ordenar a probabilidade de churn do maior para o menor).
-4. Os 50 primeiros dessa lista são salvos em `top_50_predictions.csv`, por isso o arquivo está em ordem crescente de `Proba`.
+1. As features são calculadas para a `dtRef` 2026-07-01.
+2. O modelo final gera `ProbaChurn` para cada cliente: `predict_proba(X)[:, 0]`, a probabilidade da classe 0 (`flAtivacao = 0`).
+3. Os clientes são ordenados por `ProbaChurn` do maior para o menor risco.
+4. Os 50 primeiros são salvos em `top_50_predictions.csv`.
 
+
+```python
+X = df[model.feature_names_in_]
+df['ProbaChurn'] = model.predict_proba(X)[:, 0]
+top_50_df = df.sort_values(by='ProbaChurn', ascending=False).head(50)
+```
 
 ## Repositório e citação
 
 Repositório: <https://github.com/RakellM/ASN2026_tmw-loyalty-t05>
 
-```text
-[Raquel Marques]. ASN2026 – TMW Loyalty – Time 05: previsão de churn em 28 dias. 2026.
-Disponível em: https://github.com/RakellM/ASN2026_tmw-loyalty-t05
-```
+> [Raquel Marques]. ASN2026 - TMW Loyalty: previsão de churn em 28 dias. 2026.
+> Disponível em: https://github.com/RakellM/ASN2026_tmw-loyalty-t05
+
 
 ## Próximos passos
 
-- Calibrar as probabilidades
+- Reavaliar a correlação entre as variáveis
 - Testar novos modelos e janelas de tempo
-- Podar as 31 features com importância zero e reavaliar o desempenho
-- Monitoramento em produção e teste A/B de ações de retenção
+- Podar as 31 features com importância zero
+- Monitorar em produção e testar ações de retenção
 
 ## 👥 Autores / contato
 

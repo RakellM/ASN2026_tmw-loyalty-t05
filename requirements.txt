@@ -1,0 +1,13 @@
+# Dependências do projeto (notebooks em Modelo/).
+# No Databricks, pandas, numpy, scikit-learn, matplotlib e mlflow já vêm instalados;
+# os pacotes abaixo são os que os notebooks instalam ou importam.
+
+pandas
+numpy
+scikit-learn
+matplotlib
+mlflow
+feature-engine
+xgboost
+lightgbm
+catboost
