@@ -89,7 +89,7 @@ Os artefatos não ficam no repositório. Eles ficam no catálogo do Databricks:
 
 | Artefato | Onde está | Gerado por |
 |---|---|---|
-| Feature store (loyalty e cursos) | `workspace.analytics_rm.fs_loyalty` `workspace.analytics_rm.fs_loyalty` | `1_Feature_Store.ipynb` + `sql/*.sql` |
+| Feature store (loyalty e cursos) | `workspace.analytics_rm.fs_loyalty` `workspace.analytics_rm.fs_education` | `1_Feature_Store.ipynb` + `sql/*.sql` |
 | ABT (tabela analítica de treino) | `workspace.analytics_rm.abt_ativacao` | `2_ABT_RM.ipynb` |
 | Modelo treinado / experimento MLflow | `workspace.analytics_rm.Models.tmw_ativacao_t5` | `3_Train.ipynb` |
 | Predições (todos os clientes) | `workspace.model_output.tmw_ativacao_t5_scores` | `4_Predict.ipynb` |
